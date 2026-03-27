@@ -35,6 +35,7 @@ from gotchi_app.storage import (
     save_pet,
     update_pet,
 )
+from gotchi_app.ui import status_screen
 
 
 def workspace_case(name: str) -> Path:
@@ -123,7 +124,7 @@ class IdentityIsolationTests(unittest.TestCase):
     def test_uid_identity_loads_correct_pet(self) -> None:
         now = datetime(2026, 3, 27, 12, 0, tzinfo=timezone.utc)
         pet_a = create_pet(self.user_a.uid, self.user_a.username, "Nyx", "crow", now)
-        pet_b = create_pet(self.user_b.uid, self.user_b.username, "Corvus", "crow", now)
+        pet_b = create_pet(self.user_b.uid, self.user_b.username, "Corvus", "cat", now)
         save_pet(pet_a, identity=self.user_a)
         save_pet(pet_b, identity=self.user_b)
         self.assertEqual(require_pet(identity=self.user_a).name, "Nyx")
@@ -207,6 +208,13 @@ class SimulatorTests(unittest.TestCase):
         updated = apply_time(doomed, later, self.tuning)
         self.assertFalse(updated.alive)
         self.assertEqual(updated.health, 0.0)
+
+    def test_cat_species_renders_cat_art(self) -> None:
+        pet = create_pet(1001, "alice", "King", "cat", self.now)
+        screen = status_screen(pet, self.now)
+        self.assertIn("King [cat]", screen)
+        self.assertIn("/\\_/\\", screen)
+        self.assertNotIn("corvo", screen.lower())
 
 
 class StorageTests(unittest.TestCase):

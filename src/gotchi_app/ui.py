@@ -5,46 +5,250 @@ from datetime import datetime, timezone
 
 from .models import Pet
 from .runv_mode import ServerPetStatus
-from .simulator import general_status
+from .simulator import general_status, normalize_species
 from .storage import MigrationReport, StorageDoctorReport
 
 
-ASCII_ART = {
-    "happy": r"""
+PET_ART = {
+    "cat": {
+        "happy": r"""
+ /\_/\\
+( o.o )
+ > ^ <
+""".strip("\n"),
+        "sleep": r"""
+ /\_/\\
+( -.- ) z
+ > ^ <
+""".strip("\n"),
+        "tired": r"""
+ /\_/\\
+( -.- )
+ > ^ <
+""".strip("\n"),
+        "sick": r"""
+ /\_/\\
+( x.x )
+ > ^ <
+""".strip("\n"),
+        "dead": r"""
+ /\_/\\
+( _._ )
+ > ^ <
+""".strip("\n"),
+    },
+    "fox": {
+        "happy": r"""
+ /\   /\\
+((ovo ))
+():::()
+  V V
+""".strip("\n"),
+        "sleep": r"""
+ /\   /\\
+((uvu )) z
+():::()
+  V V
+""".strip("\n"),
+        "tired": r"""
+ /\   /\\
+((-v- ))
+():::()
+  V V
+""".strip("\n"),
+        "sick": r"""
+ /\   /\\
+((xvx ))
+():::()
+  V V
+""".strip("\n"),
+        "dead": r"""
+ /\   /\\
+((___ ))
+():::()
+  V V
+""".strip("\n"),
+    },
+    "dog": {
+        "happy": r"""
+ / \__
+(    @\___
+ /         O
+/   (_____/
+/_____/   U
+""".strip("\n"),
+        "sleep": r"""
+ / \__
+(    -\___ z
+ /         O
+/   (_____/
+/_____/   U
+""".strip("\n"),
+        "tired": r"""
+ / \__
+(    -\___
+ /         O
+/   (_____/
+/_____/   U
+""".strip("\n"),
+        "sick": r"""
+ / \__
+(    x\___
+ /         O
+/   (_____/
+/_____/   U
+""".strip("\n"),
+        "dead": r"""
+ / \__
+(    _\___
+ /         O
+/   (_____/
+/_____/   U
+""".strip("\n"),
+    },
+    "crow": {
+        "happy": r"""
    \
    (o>
 \\_//)
  \_/_
   _|_
 """.strip("\n"),
-    "sleep": r"""
+        "sleep": r"""
    \
    (u>   z
 \\_//)
  \_/_
   _|_
 """.strip("\n"),
-    "tired": r"""
+        "tired": r"""
    \
    (-<
 \\_//)
  \_/_
   _|_
 """.strip("\n"),
-    "sick": r"""
+        "sick": r"""
    \
    (x<
 \\_//)
  \_/_
   _|_
 """.strip("\n"),
-    "dead": r"""
+        "dead": r"""
    \
    (_x)
 \\_//)
  \_/_
   _|_
 """.strip("\n"),
+    },
+    "raven": {
+        "happy": r"""
+   \
+   (O>
+\\_//)
+ \_/_
+  _|_
+""".strip("\n"),
+        "sleep": r"""
+   \
+   (U>   z
+\\_//)
+ \_/_
+  _|_
+""".strip("\n"),
+        "tired": r"""
+   \
+   (-<
+\\_//)
+ \_/_
+  _|_
+""".strip("\n"),
+        "sick": r"""
+   \
+   (x<
+\\_//)
+ \_/_
+  _|_
+""".strip("\n"),
+        "dead": r"""
+   \
+   (_x)
+\\_//)
+ \_/_
+  _|_
+""".strip("\n"),
+    },
+    "owl": {
+        "happy": r"""
+  ,_,
+ (O,O)
+ (   )
+  " "
+""".strip("\n"),
+        "sleep": r"""
+  ,_,
+ (-,-) z
+ (   )
+  " "
+""".strip("\n"),
+        "tired": r"""
+  ,_,
+ (-,-)
+ (   )
+  " "
+""".strip("\n"),
+        "sick": r"""
+  ,_,
+ (x,x)
+ (   )
+  " "
+""".strip("\n"),
+        "dead": r"""
+  ,_,
+ (_,_)
+ (   )
+  " "
+""".strip("\n"),
+    },
+    "blob": {
+        "happy": r"""
+  .-.
+ (o o)
+ | O \
+  \   \
+   `~~~'
+""".strip("\n"),
+        "sleep": r"""
+  .-.
+ (- -) z
+ | O \
+  \   \
+   `~~~'
+""".strip("\n"),
+        "tired": r"""
+  .-.
+ (- -)
+ | O \
+  \   \
+   `~~~'
+""".strip("\n"),
+        "sick": r"""
+  .-.
+ (x x)
+ | O \
+  \   \
+   `~~~'
+""".strip("\n"),
+        "dead": r"""
+  .-.
+ (_ _)
+ | O \
+  \   \
+   `~~~'
+""".strip("\n"),
+    },
 }
 
 
@@ -85,15 +289,17 @@ RUNV_ART = {
 
 
 def pick_art(pet: Pet) -> str:
+    species = normalize_species(pet.species)
+    art = PET_ART.get(species, PET_ART["blob"])
     if not pet.alive:
-        return ASCII_ART["dead"]
+        return art["dead"]
     if pet.is_sleeping:
-        return ASCII_ART["sleep"]
+        return art["sleep"]
     if pet.illness or pet.health < 35:
-        return ASCII_ART["sick"]
+        return art["sick"]
     if pet.energy < 35 or pet.mood < 35:
-        return ASCII_ART["tired"]
-    return ASCII_ART["happy"]
+        return art["tired"]
+    return art["happy"]
 
 
 def bar(label: str, value: float, invert: bool = False, width: int = 22) -> str:
@@ -115,18 +321,18 @@ def human_delta(from_dt: datetime, to_dt: datetime) -> str:
 
 def _pet_hint(pet: Pet) -> str:
     if not pet.alive:
-        return "O ciclo deste corvo se encerrou."
+        return "O ciclo deste companheiro terminou."
     if pet.illness or pet.health < 40:
         return "Sugestao: `gotchi doctor` e depois um pouco de descanso."
     if pet.hunger > 70:
-        return "Sugestao: `gotchi feed` antes que o humor azede."
+        return "Sugestao: `gotchi feed` antes que o humor piore."
     if pet.energy < 35:
-        return "Sugestao: `gotchi sleep` para recuperar o poleiro."
+        return "Sugestao: `gotchi sleep` para recuperar energia."
     if pet.hygiene < 40:
-        return "Sugestao: `gotchi clean` para alinhar as penas."
+        return "Sugestao: `gotchi clean` para colocar tudo em ordem."
     if pet.mood < 45:
-        return "Sugestao: `gotchi play` para espantar a carranca."
-    return "Tudo em ordem. Um agrado ocasional ja mantem o corvo por perto."
+        return "Sugestao: `gotchi play` para animar o ambiente."
+    return "Tudo em ordem. Um pouco de cuidado de vez em quando ja mantem o pet feliz."
 
 
 def status_screen(pet: Pet, now: datetime) -> str:
@@ -134,7 +340,7 @@ def status_screen(pet: Pet, now: datetime) -> str:
     created = pet.created_at.astimezone(timezone.utc)
     interaction = pet.last_interaction_at.astimezone(timezone.utc)
     lines = [
-        "gotchi // poleiro",
+        "gotchi // habitat",
         f"{pet.name} [{pet.species}]",
         pick_art(pet),
         (
@@ -226,7 +432,7 @@ def migration_screen(report: MigrationReport) -> str:
 
 def status_line(pet: Pet) -> str:
     if not pet.alive:
-        return f"{pet.name} se foi. O poleiro ficou silencioso."
+        return f"{pet.name} se foi. O habitat ficou silencioso."
     hunger_band = "atencao" if pet.hunger >= 70 else "ok"
     mood_band = "otimo" if pet.mood >= 75 else "instavel" if pet.mood < 45 else "bom"
     if pet.is_sleeping:
