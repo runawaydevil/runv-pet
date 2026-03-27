@@ -5,6 +5,7 @@ import sys
 import textwrap
 from datetime import datetime, timezone
 
+from .mail import MailMessage, MailNotice
 from .models import Pet
 from .runv_mode import ServerPetStatus
 from .simulator import general_status, normalize_species
@@ -79,33 +80,38 @@ PET_ART = {
     "fox": {
         "happy": r"""
  /\   /\\
-((ovo ))
-():::()
-  V V
+(  o o  )
+ /  V  \\
+/(  _  )\\
+  ^^ ^^
 """.strip("\n"),
         "sleep": r"""
  /\   /\\
-((uvu )) z
-():::()
-  V V
+(  - -  ) z
+ /  V  \\
+/(  _  )\\
+  ^^ ^^
 """.strip("\n"),
         "tired": r"""
  /\   /\\
-((-v- ))
-():::()
-  V V
+(  - -  )
+ /  V  \\
+/(  _  )\\
+  ^^ ^^
 """.strip("\n"),
         "sick": r"""
  /\   /\\
-((xvx ))
-():::()
-  V V
+(  x x  )
+ /  V  \\
+/(  _  )\\
+  ^^ ^^
 """.strip("\n"),
         "dead": r"""
  /\   /\\
-((___ ))
-():::()
-  V V
+(  _ _  )
+ /  V  \\
+/(  _  )\\
+  ^^ ^^
 """.strip("\n"),
     },
     "rabbit": {
@@ -137,71 +143,71 @@ PET_ART = {
     },
     "turtle": {
         "happy": r"""
-  _____
- / . .\\
-|  ---  |_
- \_____/
+    ____
+ __/  .\\
+/__.---._)
+   /   / 
 """.strip("\n"),
         "sleep": r"""
-  _____
- / - -\\ z
-|  ---  |_
- \_____/
+    ____
+ __/  -\\ z
+/__.---._)
+   /   / 
 """.strip("\n"),
         "tired": r"""
-  _____
- / - -\\
-|  ---  |_
- \_____/
+    ____
+ __/  -\\
+/__.---._)
+   /   / 
 """.strip("\n"),
         "sick": r"""
-  _____
- / x x\\
-|  ---  |_
- \_____/
+    ____
+ __/  x\\
+/__.---._)
+   /   / 
 """.strip("\n"),
         "dead": r"""
-  _____
- / _ _\\
-|  ---  |_
- \_____/
+    ____
+ __/  _\\
+/__.---._)
+   /   / 
 """.strip("\n"),
     },
     "bat": {
         "happy": r"""
  /\                 /\\
-/ \'._   (\_/)   _.'/ \\
-|.''._'--(o.o)--'_.''.|
- \\_ / `;=/ \=;` \ _//
-   `\__| \___/ |__/`
+/ \'._   /\_/\\   _.'/ \\
+|.''._'-( o.o )-'_.''.|
+ \\_ / `-\_^_/-` \ _//
+   `\__         __/`
 """.strip("\n"),
         "sleep": r"""
  /\                 /\\
-/ \'._   (\_/)   _.'/ \\
-|.''._'--(-.-)--'_.''.|
- \\_ / `;=/ \=;` \ _//
-   `\__| \___/ |__/` z
+/ \'._   /\_/\\   _.'/ \\
+|.''._'-( -.- )-'_.''.|
+ \\_ / `-\_^_/-` \ _//
+   `\__         __/` z
 """.strip("\n"),
         "tired": r"""
  /\                 /\\
-/ \'._   (\_/)   _.'/ \\
-|.''._'--(-.-)--'_.''.|
- \\_ / `;=/ \=;` \ _//
-   `\__| \___/ |__/`
+/ \'._   /\_/\\   _.'/ \\
+|.''._'-( -.- )-'_.''.|
+ \\_ / `-\_^_/-` \ _//
+   `\__         __/`
 """.strip("\n"),
         "sick": r"""
  /\                 /\\
-/ \'._   (\_/)   _.'/ \\
-|.''._'--(x.x)--'_.''.|
- \\_ / `;=/ \=;` \ _//
-   `\__| \___/ |__/`
+/ \'._   /\_/\\   _.'/ \\
+|.''._'-( x.x )-'_.''.|
+ \\_ / `-\_^_/-` \ _//
+   `\__         __/`
 """.strip("\n"),
         "dead": r"""
  /\                 /\\
-/ \'._   (\_/)   _.'/ \\
-|.''._'--(_._)--'_.''.|
- \\_ / `;=/ \=;` \ _//
-   `\__| \___/ |__/`
+/ \'._   /\_/\\   _.'/ \\
+|.''._'-( _._ )-'_.''.|
+ \\_ / `-\_^_/-` \ _//
+   `\__         __/`
 """.strip("\n"),
     },
     "crow": {
@@ -349,7 +355,6 @@ PET_ART = {
     },
 }
 
-
 RUNV_ART = {
     "excelente": r"""
     _
@@ -384,7 +389,6 @@ RUNV_ART = {
   / \\
 """.strip("\n"),
 }
-
 
 ANSI = {
     "reset": "\033[0m",
@@ -458,13 +462,9 @@ def human_delta(from_dt: datetime, to_dt: datetime) -> str:
     hours, rem = divmod(rem, 3600)
     minutes, _ = divmod(rem, 60)
     if days:
-        if days == 1:
-            return "1 dia"
-        return f"{days} dias"
+        return "1 dia" if days == 1 else f"{days} dias"
     if hours:
-        if hours == 1:
-            return "1 hora"
-        return f"{hours} horas"
+        return "1 hora" if hours == 1 else f"{hours} horas"
     if minutes <= 1:
         return "1 minuto"
     return f"{minutes} minutos"
@@ -493,7 +493,15 @@ def _pet_hint(pet: Pet) -> str:
     return "Tudo em ordem. Um pouco de cuidado de vez em quando ja mantem o pet feliz."
 
 
-def status_screen(pet: Pet, now: datetime) -> str:
+def notice_banner(notice: MailNotice | None) -> str | None:
+    if notice is None or notice.unread_count <= 0:
+        return None
+    if notice.unread_count == 1 and notice.latest_sender:
+        return _paint(f"Seu pet trouxe 1 carta nova de {notice.latest_sender}.", ANSI["good"])
+    return _paint(f"Seu pet trouxe {notice.unread_count} cartas novas.", ANSI["good"])
+
+
+def status_screen(pet: Pet, now: datetime, notice: MailNotice | None = None) -> str:
     utc_now = now.astimezone(timezone.utc)
     created = pet.created_at.astimezone(timezone.utc)
     interaction = pet.last_interaction_at.astimezone(timezone.utc)
@@ -506,31 +514,36 @@ def status_screen(pet: Pet, now: datetime) -> str:
         ),
         _state_color(pet),
     )
-    lines = [
-        header,
-        name_line,
-        pick_art(pet),
-        state_line,
-        bar("fome", pet.hunger),
-        bar("energia", pet.energy),
-        bar("humor", pet.mood),
-        bar("higiene", pet.hygiene),
-        bar("saude", pet.health),
-        "",
-        textwrap.fill(pet.last_message, width=72),
-        textwrap.fill(_pet_hint(pet), width=72),
-        "",
-        f"Idade: {pet.age_hours / 24.0:.1f} dias | Criado: {human_ago(created, utc_now)}",
-        f"Ultima interacao: {human_ago(interaction, utc_now)}",
-        f"Ultimo update: {human_ago(pet.last_update_at, utc_now)}",
-        "",
-        _paint(
-            "Acoes: init | status | path | line | feed | play | sleep | clean | rename NOVO_NOME | doctor | migrate | export | import | help",
-            ANSI["dim"],
-        ),
-    ]
+    lines = [header]
+    banner = notice_banner(notice)
+    if banner is not None:
+        lines.extend([banner, ""])
+    lines.extend(
+        [
+            name_line,
+            pick_art(pet),
+            state_line,
+            bar("fome", pet.hunger),
+            bar("energia", pet.energy),
+            bar("humor", pet.mood),
+            bar("higiene", pet.hygiene),
+            bar("saude", pet.health),
+            "",
+            textwrap.fill(pet.last_message, width=72),
+            textwrap.fill(_pet_hint(pet), width=72),
+            "",
+            f"Idade: {pet.age_hours / 24.0:.1f} dias | Criado: {human_ago(created, utc_now)}",
+            f"Ultima interacao: {human_ago(interaction, utc_now)}",
+            f"Ultimo update: {human_ago(pet.last_update_at, utc_now)}",
+            "",
+            _paint(
+                "Acoes: init | status | path | line | feed | play | sleep | clean | rename NOVO_NOME | doctor | carry | mail | migrate | export | import | help",
+                ANSI["dim"],
+            ),
+        ]
+    )
     if pet.cause_of_death:
-        lines.insert(5, f"Causa da morte: {pet.cause_of_death}")
+        lines.insert(6 if banner is not None else 5, f"Causa da morte: {pet.cause_of_death}")
     return "\n".join(lines)
 
 
@@ -545,7 +558,10 @@ def runv_status_screen(status: ServerPetStatus) -> str:
         _paint("runv // observatorio", ANSI["title"]),
         _paint("corvo do servidor", ANSI["crow"]),
         _paint(RUNV_ART[status.status], ANSI["crow"]),
-        _paint(f"Estado geral: {status.status} | Ninho: {status.perch}", ANSI["good"] if status.status in {"excelente", "bem"} else ANSI["warn"] if status.status == "atencao" else ANSI["bad"]),
+        _paint(
+            f"Estado geral: {status.status} | Ninho: {status.perch}",
+            ANSI["good"] if status.status in {"excelente", "bem"} else ANSI["warn"] if status.status == "atencao" else ANSI["bad"],
+        ),
         f"Ritmo do ar: {detail_map[status.load_state]}",
         f"Poleiro de dados: {detail_map[status.disk_state]}",
         f"Trilha de escrita: {detail_map[status.write_state]}",
@@ -597,7 +613,64 @@ def migration_screen(report: MigrationReport) -> str:
     return "\n".join(lines)
 
 
-def status_line(pet: Pet) -> str:
+def mail_list_screen(messages: list[MailMessage]) -> str:
+    lines = [_paint("gotchi // mail", ANSI["title"]), ""]
+    if not messages:
+        lines.append("Nenhuma carta no momento.")
+        return "\n".join(lines)
+    for message in messages:
+        status = message.status
+        prefix = "novo" if status == "new" else "lido" if status == "read" else "arquivado"
+        color = ANSI["good"] if status == "new" else ANSI["dim"] if status == "read" else ANSI["warn"]
+        preview = message.body.replace("\n", " ").strip()
+        if len(preview) > 56:
+            preview = preview[:53] + "..."
+        line = f"#{message.id:<3} {prefix:<9} de {message.sender_username:<12} {preview}"
+        lines.append(_paint(line, color))
+    lines.extend(
+        [
+            "",
+            _paint("Comandos: gotchi mail read ID | gotchi mail reply ID --message TEXTO | gotchi mail archive ID | gotchi mail delete ID", ANSI["dim"]),
+        ]
+    )
+    return "\n".join(lines)
+
+
+def mail_read_screen(message: MailMessage) -> str:
+    lines = [
+        _paint("gotchi // carta", ANSI["title"]),
+        "",
+        f"Carta #{message.id}",
+        f"De: {message.sender_username}",
+        f"Para: {message.recipient_username}",
+        f"Estado: {message.status}",
+        f"Recebida: {human_ago(message.created_at, datetime.now(timezone.utc))}",
+        "",
+        textwrap.fill(message.body, width=72),
+        "",
+        _paint("Comandos: gotchi mail reply ID --message TEXTO | gotchi mail archive ID | gotchi mail delete ID", ANSI["dim"]),
+    ]
+    return "\n".join(lines)
+
+
+def mail_action_screen(message: MailMessage, action: str) -> str:
+    return "\n".join(
+        [
+            _paint("gotchi // mail", ANSI["title"]),
+            "",
+            f"Carta #{message.id} {action}.",
+            f"De: {message.sender_username}",
+            f"Estado atual: {message.status}",
+        ]
+    )
+
+
+def status_line(pet: Pet, notice: MailNotice | None = None) -> str:
+    if notice is not None and notice.unread_count > 0:
+        base = f"Seu pet trouxe {notice.unread_count} carta{'s' if notice.unread_count != 1 else ''} nova{'s' if notice.unread_count != 1 else ''}."
+        if pet.is_sleeping:
+            return f"{base} {pet.name} segue dormindo em paz."
+        return base
     if not pet.alive:
         return f"{pet.name} se foi. O habitat ficou silencioso."
     hunger_band = "atencao" if pet.hunger >= 70 else "ok"
@@ -624,6 +697,12 @@ def help_text() -> str:
           gotchi clean           limpa o pet
           gotchi rename NOME     renomeia o pet
           gotchi doctor          tenta tratar doenca / recuperar saude
+          gotchi carry TEXTO --user USER envia uma carta curta
+          gotchi mail            lista cartas recebidas
+          gotchi mail read ID    le uma carta
+          gotchi mail reply ID --message TEXTO responde a carta
+          gotchi mail archive ID arquiva a carta
+          gotchi mail delete ID  apaga a carta da inbox
           gotchi doctor --storage verifica storage, migracao e integridade
           gotchi migrate         tenta migrar save legado
           gotchi export [ARQ]    exporta o pet atual em JSON

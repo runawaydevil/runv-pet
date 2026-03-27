@@ -12,6 +12,8 @@ O deploy nativo do sistema segue este layout:
 - scripts de manutencao em `/opt/gotchi/scripts`
 - launcher global em `/usr/local/bin/gotchi`
 - utilitario de preparacao em `/usr/local/bin/flash`
+- spool root-only de cartas em `/var/lib/gotchi-mail`
+- bridge setuid em `/opt/gotchi/bin/gotchi-mail-bridge`
 
 Isso garante que:
 
@@ -19,6 +21,7 @@ Isso garante que:
 - o comando nao depende de `~/.local/bin`
 - o host nao depende do checkout original depois da instalacao
 - os pets continuam separados por UID e independentes entre si
+- o correio entre usuarios usa um backend central protegido, sem expor o banco diretamente aos usuarios
 
 ## Requisitos
 
@@ -26,7 +29,7 @@ Instale o basico:
 
 ```bash
 sudo apt update
-sudo apt install -y python3 python3-pip python3-venv
+sudo apt install -y python3 python3-pip python3-venv gcc
 ```
 
 ## Instalacao nativa do sistema
@@ -45,6 +48,8 @@ Isso prepara:
 - `/opt/gotchi/scripts`
 - `/usr/local/bin/gotchi`
 - `/usr/local/bin/flash`
+- `/var/lib/gotchi-mail`
+- `/opt/gotchi/bin/gotchi-mail-bridge`
 
 Opcoes uteis:
 
@@ -73,8 +78,10 @@ O `flash --all` faz:
 - instala dependencias base
 - espelha o codigo necessario em `/opt/gotchi/source`
 - instala o `gotchi` nativamente em `/opt/gotchi`
+- compila e publica o bridge setuid de cartas
 - publica `gotchi` em `/usr/local/bin`
 - publica `flash` em `/usr/local/bin`
+- cria o spool root-only de cartas em `/var/lib/gotchi-mail`
 - cria config global base em `/etc/xdg/gotchi/gotchi.json`
 - opcionalmente adiciona o snippet de login no `~/.bashrc` do usuario indicado
 
@@ -113,12 +120,14 @@ which flash
 gotchi help
 gotchi path
 gotchi doctor --storage
+ls -ld /var/lib/gotchi-mail
+ls -l /opt/gotchi/bin/gotchi-mail-bridge
 ```
 
 Primeiro uso de um usuario:
 
 ```bash
-gotchi init --name Nyx --species crow
+gotchi init --name Nyx --species cat
 gotchi status
 gotchi feed
 gotchi play
@@ -140,9 +149,11 @@ Remocao do sistema:
 
 ```bash
 sudo bash ./scripts/uninstall-system.sh
-sudo bash ./scripts/uninstall-system.sh --remove-global-config
+sudo bash ./scripts/uninstall-system.sh --keep-global-config --keep-mail-root
 sudo bash ./scripts/uninstall-system.sh --remove-login-snippet --login-user alice
-sudo bash ./scripts/uninstall-system.sh --remove-global-config --remove-login-snippet --login-user alice
+sudo bash ./scripts/uninstall-system.sh --remove-login-snippets-all
+sudo bash ./scripts/uninstall-system.sh --purge-user-state
+sudo bash ./scripts/uninstall-system.sh --purge-all
 ```
 
 ## Desinstalacao do sistema
@@ -154,21 +165,25 @@ sudo bash ./scripts/uninstall-system.sh
 Opcionalmente:
 
 ```bash
-sudo bash ./scripts/uninstall-system.sh --remove-global-config
+sudo bash ./scripts/uninstall-system.sh --keep-global-config --keep-mail-root
 sudo bash ./scripts/uninstall-system.sh --remove-login-snippet --login-user alice
+sudo bash ./scripts/uninstall-system.sh --remove-login-snippets-all
+sudo bash ./scripts/uninstall-system.sh --purge-user-state
+sudo bash ./scripts/uninstall-system.sh --purge-all
 ```
 
 Observacao:
 
-- o desinstalador remove o comando global e a app instalada em `/opt/gotchi`
-- ele nao apaga os pets dos usuarios por padrao
+- o desinstalador padrao remove o comando global, a app instalada, a config global e o spool de cartas
+- ele preserva saves e snippets dos usuarios por padrao
+- use `--purge-all` para rollback total, incluindo estado e snippets dos usuarios
 
 ## Primeiro uso
 
 Cada usuario tera seu proprio pet privado e independente. Depois da instalacao global, qualquer conta pode fazer:
 
 ```bash
-gotchi init --name Nyx --species crow
+gotchi init --name Nyx --species cat
 gotchi status
 gotchi feed
 gotchi sleep

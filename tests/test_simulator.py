@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import shutil
 import sqlite3
@@ -8,22 +9,31 @@ import sys
 import threading
 import time
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
-ARTIFACTS = ROOT / ".test-artifacts" / "multiuser"
+ARTIFACTS = ROOT / ".test-artifacts" / f"multiuser-{os.getpid()}"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from gotchi_app.cli import main
 from gotchi_app.config import Tuning, resolve_paths
 from gotchi_app.filelock import file_lock
-from gotchi_app.identity import UserIdentity
+from gotchi_app.identity import UserIdentity, resolve_identity
+from gotchi_app.mail import (
+    archive_message,
+    delete_message,
+    list_inbox,
+    read_message,
+    reply_message,
+    send_message,
+    unread_notice,
+)
 from gotchi_app.runv_mode import inspect_server_pet
-from gotchi_app.simulator import SPECIES, apply_time, create_pet, interact
+from gotchi_app.simulator import SPECIES, apply_carry_trip, apply_time, carry_viability_reason, create_pet, interact
 from gotchi_app.storage import (
     doctor_storage,
     export_pet,
@@ -35,7 +45,7 @@ from gotchi_app.storage import (
     save_pet,
     update_pet,
 )
-from gotchi_app.ui import human_ago, status_screen
+from gotchi_app.ui import human_ago, mail_list_screen, notice_banner, status_screen
 
 
 def workspace_case(name: str) -> Path:
@@ -216,6 +226,26 @@ class SimulatorTests(unittest.TestCase):
         self.assertIn("/\\_/\\", screen)
         self.assertNotIn("corvo", screen.lower())
 
+    def test_fox_species_renders_fox_like_art(self) -> None:
+        pet = create_pet(1001, "alice", "Deca", "fox", self.now)
+        screen = status_screen(pet, self.now)
+        self.assertIn("Deca [fox]", screen)
+        self.assertIn("/\\   /\\", screen)
+        self.assertIn("V", screen)
+
+    def test_carry_requires_good_pet_state(self) -> None:
+        tired = self.pet.evolve(energy=42.0, mood=82.0, health=92.0, hygiene=76.0, hunger=18.0)
+        reason = carry_viability_reason(tired)
+        self.assertIsNotNone(reason)
+        assert reason is not None
+        self.assertIn("carta", reason)
+
+    def test_carry_trip_consumes_stats(self) -> None:
+        carried = apply_carry_trip(self.pet, self.now)
+        self.assertLess(carried.energy, self.pet.energy)
+        self.assertLess(carried.mood, self.pet.mood)
+        self.assertGreater(carried.hunger, self.pet.hunger)
+
     def test_human_ago_prefers_words(self) -> None:
         then = self.now - timedelta(hours=1, minutes=5)
         self.assertEqual(human_ago(then, self.now), "1 hora atras")
@@ -224,6 +254,57 @@ class SimulatorTests(unittest.TestCase):
         self.assertIn("rabbit", SPECIES)
         self.assertIn("turtle", SPECIES)
         self.assertIn("bat", SPECIES)
+
+
+class MailTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.root = workspace_case("mail")
+        self.mail_root = self.root / "mail-root"
+        self.alice = UserIdentity(uid=1001, username="alice", home=self.root / "homes" / "alice")
+        self.bob = UserIdentity(uid=1002, username="bob", home=self.root / "homes" / "bob")
+        os.environ["GOTCHI_MAIL_ROOT"] = str(self.mail_root)
+        os.environ["GOTCHI_TEST_USERS"] = json.dumps(
+            {
+                "alice": {"uid": self.alice.uid, "home": str(self.alice.home)},
+                "bob": {"uid": self.bob.uid, "home": str(self.bob.home)},
+            }
+        )
+
+    def tearDown(self) -> None:
+        for key in ("GOTCHI_MAIL_ROOT", "GOTCHI_TEST_USERS"):
+            os.environ.pop(key, None)
+
+    def test_send_and_list_inbox(self) -> None:
+        sent = send_message("Ola Bob", "bob", sender=self.alice)
+        self.assertEqual(sent.recipient_username, "bob")
+        inbox = list_inbox(self.bob)
+        self.assertEqual(len(inbox), 1)
+        self.assertEqual(inbox[0].body, "Ola Bob")
+        self.assertEqual(unread_notice(self.bob).unread_count, 1)
+
+    def test_read_reply_archive_and_delete(self) -> None:
+        sent = send_message("Ola Bob", "bob", sender=self.alice)
+        read = read_message(sent.id, self.bob)
+        self.assertEqual(read.status, "read")
+        reply = reply_message(read.id, "Oi Alice", self.bob)
+        self.assertEqual(reply.recipient_username, "alice")
+        archived = archive_message(read.id, self.bob)
+        self.assertEqual(archived.status, "archived")
+        deleted = delete_message(read.id, self.bob)
+        self.assertEqual(deleted.status, "deleted")
+
+    def test_notice_banner_mentions_sender(self) -> None:
+        send_message("Ping", "bob", sender=self.alice)
+        banner = notice_banner(unread_notice(self.bob))
+        self.assertIsNotNone(banner)
+        assert banner is not None
+        self.assertIn("alice", banner)
+
+    def test_mail_list_screen_marks_new_messages(self) -> None:
+        send_message("Primeira carta", "bob", sender=self.alice)
+        screen = mail_list_screen(list_inbox(self.bob))
+        self.assertIn("novo", screen)
+        self.assertIn("alice", screen)
 
 
 class StorageTests(unittest.TestCase):
@@ -314,9 +395,21 @@ class CommandTests(unittest.TestCase):
         os.environ["XDG_STATE_HOME"] = str(self.root / "state")
         os.environ["XDG_CONFIG_HOME"] = str(self.root / "config")
         os.environ["XDG_DATA_HOME"] = str(self.root / "data")
+        os.environ["GOTCHI_MAIL_ROOT"] = str(self.root / "mail-root")
+        os.environ["USER"] = "alice"
+        os.environ["LOGNAME"] = "alice"
+        os.environ["HOME"] = str(self.root / "homes" / "alice")
+        self.current = resolve_identity()
+        os.environ["GOTCHI_TEST_USERS"] = json.dumps(
+            {
+                self.current.username: {"uid": self.current.uid, "home": str(self.current.home)},
+                "bob": {"uid": 1002, "home": str(self.root / "homes" / "bob")},
+            }
+        )
+        save_pet(create_pet(self.current.uid, self.current.username, "Nyx", "cat", datetime.now(timezone.utc)), identity=self.current)
 
     def tearDown(self) -> None:
-        for key in ("XDG_STATE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME"):
+        for key in ("XDG_STATE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "GOTCHI_MAIL_ROOT", "GOTCHI_TEST_USERS", "USER", "LOGNAME", "HOME"):
             os.environ.pop(key, None)
 
     def test_hidden_runv_flag_does_not_crash(self) -> None:
@@ -340,7 +433,29 @@ class CommandTests(unittest.TestCase):
         with redirect_stdout(buffer):
             code = main(["help"])
         self.assertEqual(code, 0)
-        self.assertIn("gotchi doctor --storage", buffer.getvalue())
+        self.assertIn("gotchi carry", buffer.getvalue())
+        self.assertIn("gotchi mail", buffer.getvalue())
+
+    def test_carry_refuses_unfit_pet(self) -> None:
+        update_pet(self.current, lambda pet: pet.evolve(energy=40.0, mood=82.0, health=92.0, hygiene=76.0, hunger=18.0))
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            code = main(["carry", "Oi Bob", "--user", "bob"])
+        self.assertEqual(code, 1)
+        self.assertIn("carta", stderr.getvalue())
+
+    def test_carry_spends_pet_stats(self) -> None:
+        before = require_pet(self.current)
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        with redirect_stdout(stdout), redirect_stderr(stderr):
+            code = main(["carry", "Oi Bob", "--user", "bob"])
+        self.assertEqual(code, 0)
+        after = require_pet(self.current)
+        self.assertLess(after.energy, before.energy)
+        self.assertGreater(after.hunger, before.hunger)
+        self.assertIn("Carta #", stdout.getvalue())
 
 
 class RunvModeTests(unittest.TestCase):
@@ -361,3 +476,4 @@ class RunvModeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

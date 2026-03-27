@@ -8,8 +8,18 @@ from pathlib import Path
 
 from .config import load_tuning, write_default_config
 from .identity import resolve_identity
+from .mail import (
+    MailError,
+    archive_message,
+    delete_message,
+    list_inbox,
+    read_message,
+    reply_message,
+    send_message,
+    unread_notice,
+)
 from .runv_mode import inspect_server_pet
-from .simulator import SPECIES, apply_time, create_pet, interact
+from .simulator import SPECIES, apply_carry_trip, apply_time, carry_viability_reason, create_pet, interact
 from .storage import (
     StorageError,
     doctor_storage,
@@ -23,6 +33,9 @@ from .storage import (
 from .ui import (
     doctor_storage_screen,
     help_text,
+    mail_action_screen,
+    mail_list_screen,
+    mail_read_screen,
     migration_screen,
     path_screen,
     runv_status_screen,
@@ -39,10 +52,14 @@ def parser() -> argparse.ArgumentParser:
     command_parser = argparse.ArgumentParser(prog="gotchi", add_help=False)
     command_parser.add_argument("command", nargs="?", default="dashboard")
     command_parser.add_argument("argument", nargs="?")
+    command_parser.add_argument("extra_argument", nargs="?")
+    command_parser.add_argument("tail", nargs="*")
     command_parser.add_argument("--species", choices=SPECIES, default=SPECIES[0])
     command_parser.add_argument("--name")
     command_parser.add_argument("--write-config", action="store_true")
     command_parser.add_argument("--storage", action="store_true")
+    command_parser.add_argument("--user")
+    command_parser.add_argument("--message")
     return command_parser
 
 
@@ -69,6 +86,10 @@ def load_and_tick(identity=None) -> tuple:
     return pet, tuning
 
 
+def current_notice(identity=None):
+    return unread_notice(identity or resolve_identity())
+
+
 def cmd_init(args: argparse.Namespace) -> int:
     identity = resolve_identity()
     existing = None
@@ -87,13 +108,14 @@ def cmd_init(args: argparse.Namespace) -> int:
     name = args.name or identity.username.capitalize()
     pet = create_pet(identity.uid, identity.username, name, args.species, utcnow())
     update_pet(identity, lambda _current: pet)
-    print(status_screen(pet, utcnow()))
+    print(status_screen(pet, utcnow(), current_notice(identity)))
     return 0
 
 
 def cmd_status() -> int:
-    pet, _ = load_and_tick(resolve_identity())
-    print(status_screen(pet, utcnow()))
+    identity = resolve_identity()
+    pet, _ = load_and_tick(identity)
+    print(status_screen(pet, utcnow(), current_notice(identity)))
     return 0
 
 
@@ -108,7 +130,7 @@ def cmd_action(action: str) -> int:
 
     updated = update_pet(identity, mutate)
     assert updated is not None
-    print(status_screen(updated, utcnow()))
+    print(status_screen(updated, utcnow(), current_notice(identity)))
     return 0
 
 
@@ -127,7 +149,7 @@ def cmd_rename(new_name: str | None) -> int:
 
     pet = update_pet(identity, mutate)
     assert pet is not None
-    print(status_screen(pet, utcnow()))
+    print(status_screen(pet, utcnow(), current_notice(identity)))
     return 0
 
 
@@ -137,8 +159,9 @@ def cmd_path() -> int:
 
 
 def cmd_line() -> int:
-    pet, _ = load_and_tick(resolve_identity())
-    print(status_line(pet))
+    identity = resolve_identity()
+    pet, _ = load_and_tick(identity)
+    print(status_line(pet, current_notice(identity)))
     return 0
 
 
@@ -173,8 +196,76 @@ def cmd_import(target_arg: str | None) -> int:
         return 1
     payload = json.loads(Path(target_arg).read_text(encoding="utf-8"))
     pet = import_pet(payload, resolve_identity())
-    print(status_screen(pet, utcnow()))
+    print(status_screen(pet, utcnow(), current_notice(resolve_identity())))
     return 0
+
+
+def cmd_carry(args: argparse.Namespace) -> int:
+    identity = resolve_identity()
+    ensure_pet_available(identity)
+    target_user = args.user
+    if not target_user:
+        print("Uso: gotchi carry \"mensagem\" --user USER")
+        return 1
+    body = args.message or args.argument or " ".join(args.tail).strip()
+    if not body:
+        print("Uso: gotchi carry \"mensagem\" --user USER")
+        return 1
+
+    now = utcnow()
+    tuning = load_tuning(identity)
+    pet = update_pet(identity, lambda current: apply_time(require_existing(current), now, tuning))
+    assert pet is not None
+    reason = carry_viability_reason(pet)
+    if reason is not None:
+        raise StorageError(reason)
+
+    message = send_message(body=body, recipient_username=target_user, sender=identity)
+    updated = update_pet(identity, lambda current: apply_carry_trip(apply_time(require_existing(current), now, tuning), now))
+    assert updated is not None
+    print(status_screen(updated, now, current_notice(identity)))
+    print(f"\nCarta #{message.id} enviada para {message.recipient_username}.")
+    return 0
+
+
+def cmd_mail(args: argparse.Namespace) -> int:
+    identity = resolve_identity()
+    ensure_pet_available(identity)
+    action = args.argument
+    if not action:
+        print(mail_list_screen(list_inbox(identity)))
+        return 0
+    if action == "read":
+        if not args.extra_argument:
+            print("Uso: gotchi mail read ID")
+            return 1
+        print(mail_read_screen(read_message(int(args.extra_argument), identity)))
+        return 0
+    if action == "reply":
+        if not args.extra_argument:
+            print("Uso: gotchi mail reply ID --message TEXTO")
+            return 1
+        body = args.message or " ".join(args.tail).strip()
+        if not body:
+            print("Uso: gotchi mail reply ID --message TEXTO")
+            return 1
+        message = reply_message(int(args.extra_argument), body, identity)
+        print(mail_action_screen(message, "respondida"))
+        return 0
+    if action == "archive":
+        if not args.extra_argument:
+            print("Uso: gotchi mail archive ID")
+            return 1
+        print(mail_action_screen(archive_message(int(args.extra_argument), identity), "arquivada"))
+        return 0
+    if action == "delete":
+        if not args.extra_argument:
+            print("Uso: gotchi mail delete ID")
+            return 1
+        print(mail_action_screen(delete_message(int(args.extra_argument), identity), "apagada"))
+        return 0
+    print("Uso: gotchi mail [read|reply|archive|delete]")
+    return 1
 
 
 def cmd_runv() -> int:
@@ -210,14 +301,21 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_export(args.argument)
         if command == "import":
             return cmd_import(args.argument)
+        if command == "carry":
+            return cmd_carry(args)
+        if command == "mail":
+            return cmd_mail(args)
         if command in {"feed", "play", "sleep", "clean"}:
             return cmd_action(command)
         if command == "rename":
             return cmd_rename(args.argument)
         print(help_text())
         return 1
-    except StorageError as exc:
+    except (StorageError, MailError) as exc:
         print(str(exc), file=sys.stderr)
+        return 1
+    except ValueError:
+        print("ID de carta invalido.", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
         print("\nInterrompido.")

@@ -10,7 +10,6 @@ from .models import Pet
 
 SPECIES = ("cat", "dog", "fox", "rabbit", "turtle", "bat", "crow", "raven", "owl", "blob")
 
-
 SPECIES_ALIASES = {
     "bird": "crow",
     "kitty": "cat",
@@ -21,6 +20,16 @@ SPECIES_ALIASES = {
     "bun": "rabbit",
     "corvo": "crow",
 }
+
+CARRY_MIN_ENERGY = 70.0
+CARRY_MIN_MOOD = 60.0
+CARRY_MIN_HEALTH = 70.0
+CARRY_MIN_HYGIENE = 55.0
+CARRY_MAX_HUNGER = 35.0
+CARRY_ENERGY_COST = 12.0
+CARRY_MOOD_COST = 4.0
+CARRY_HUNGER_COST = 6.0
+CARRY_HYGIENE_COST = 3.0
 
 
 @dataclass(frozen=True)
@@ -39,6 +48,8 @@ class SpeciesFlavor:
     clean: str
     doctor: str
     doctor_ok: str
+    carry: str
+    carry_refuse: str
 
 
 SPECIES_FLAVOR = {
@@ -57,6 +68,8 @@ SPECIES_FLAVOR = {
         clean="{name} saiu limpo, alinhado e com o pelo em ordem.",
         doctor="{name} recebeu cuidados e parece bem mais confortavel.",
         doctor_ok="{name} nao precisava de medico, mas aprovou a consulta.",
+        carry="{name} levou a carta e voltou com jeito de quem conhece todos os atalhos.",
+        carry_refuse="{name} nao esta em condicoes de levar carta agora. Energia, humor e saude precisam estar em boa forma.",
     ),
     "dog": SpeciesFlavor(
         arrival="Entrou abanando o rabo e adotou o terminal na hora.",
@@ -73,6 +86,8 @@ SPECIES_FLAVOR = {
         clean="{name} ficou limpo e bem mais confortavel.",
         doctor="{name} recebeu cuidados e voltou a animar.",
         doctor_ok="{name} nao precisava de medico, mas gostou da atencao.",
+        carry="{name} correu com a carta e voltou abanando o rabo.",
+        carry_refuse="{name} esta sem pique para fazer entrega. Cuide dele antes de mandar cartas.",
     ),
     "fox": SpeciesFlavor(
         arrival="Chegou leve e atento, como se ja conhecesse cada canto do shell.",
@@ -89,6 +104,8 @@ SPECIES_FLAVOR = {
         clean="{name} ajeitou o pelo e ficou pronto para mais uma volta.",
         doctor="{name} recebeu cuidados e voltou a se firmar.",
         doctor_ok="{name} estava bem, mas aceitou o check-up com elegancia.",
+        carry="{name} sumiu por um instante e voltou depois de entregar a carta.",
+        carry_refuse="{name} esta sem a agilidade necessaria para levar cartas agora.",
     ),
     "rabbit": SpeciesFlavor(
         arrival="Chegou aos pulinhos e fez do terminal um abrigo seguro.",
@@ -105,6 +122,8 @@ SPECIES_FLAVOR = {
         clean="{name} ficou bem cuidado e com o pelo em ordem.",
         doctor="{name} recebeu cuidado e parece mais seguro agora.",
         doctor_ok="{name} estava bem, mas aceitou o cuidado extra.",
+        carry="{name} levou a carta aos pulinhos e voltou em seguranca.",
+        carry_refuse="{name} esta sensivel demais para fazer uma entrega agora.",
     ),
     "turtle": SpeciesFlavor(
         arrival="Apareceu devagar e assumiu um canto do terminal sem pressa.",
@@ -121,6 +140,8 @@ SPECIES_FLAVOR = {
         clean="{name} ficou limpo e com o casco em ordem.",
         doctor="{name} recebeu cuidados e voltou a se firmar.",
         doctor_ok="{name} nao precisava de medico, mas tolerou a revisao.",
+        carry="{name} fez a entrega no proprio ritmo e voltou inteiro.",
+        carry_refuse="{name} nao esta firme o bastante para carregar uma carta agora.",
     ),
     "bat": SpeciesFlavor(
         arrival="Surgiu do nada e se pendurou no terminal como se fosse casa.",
@@ -137,6 +158,8 @@ SPECIES_FLAVOR = {
         clean="{name} se ajeitou e ficou bem mais confortavel.",
         doctor="{name} recebeu cuidados e recuperou o ritmo.",
         doctor_ok="{name} estava bem, mas aceitou a consulta.",
+        carry="{name} voou com a carta e voltou antes do eco sumir.",
+        carry_refuse="{name} nao esta bem o bastante para uma entrega agora.",
     ),
     "crow": SpeciesFlavor(
         arrival="Pousou no terminal e tomou posse do espaco.",
@@ -153,6 +176,8 @@ SPECIES_FLAVOR = {
         clean="{name} alinhou as penas e ficou bem mais apresentavel.",
         doctor="{name} recebeu cuidados e voltou a firmar o olhar.",
         doctor_ok="{name} nao precisava de medico, mas aceitou a visita com dignidade.",
+        carry="{name} levou a carta no bico e voltou com o olhar satisfeito.",
+        carry_refuse="{name} nao esta apto a voar com uma carta agora.",
     ),
     "raven": SpeciesFlavor(
         arrival="Chegou em silencio e assumiu o terminal como territorio.",
@@ -169,6 +194,8 @@ SPECIES_FLAVOR = {
         clean="{name} ajeitou as penas e ficou em boa forma.",
         doctor="{name} recebeu cuidados e voltou a se firmar.",
         doctor_ok="{name} estava bem, mas tolerou a consulta.",
+        carry="{name} cruzou o terminal com a carta e voltou em silencio.",
+        carry_refuse="{name} nao esta firme o bastante para levar uma carta agora.",
     ),
     "owl": SpeciesFlavor(
         arrival="Aterrissou em silencio e tomou conta do turno da noite.",
@@ -185,6 +212,8 @@ SPECIES_FLAVOR = {
         clean="{name} ajeitou as penas e ficou impecavel.",
         doctor="{name} recebeu cuidados e voltou a respirar melhor.",
         doctor_ok="{name} nao precisava de tratamento, mas aceitou a revisao.",
+        carry="{name} fez a entrega em silencio e voltou ao poleiro.",
+        carry_refuse="{name} nao esta em boa forma para sair em entrega agora.",
     ),
     "blob": SpeciesFlavor(
         arrival="Surgiu no terminal e decidiu ficar por aqui.",
@@ -201,6 +230,8 @@ SPECIES_FLAVOR = {
         clean="{name} recuperou a forma e ficou mais estavel.",
         doctor="{name} recebeu cuidados e se recompôs.",
         doctor_ok="{name} estava bem, mas aprovou o cuidado extra.",
+        carry="{name} levou a carta de um jeito estranho, mas eficaz.",
+        carry_refuse="{name} nao esta estavel o bastante para levar uma carta agora.",
     ),
 }
 
@@ -274,6 +305,40 @@ def mood_message(pet: Pet) -> str:
     if state == "atencao":
         return flavor.warning.format(name=pet.name)
     return f"{pet.name} precisa de voce com urgencia."
+
+
+def carry_viability_reason(pet: Pet) -> str | None:
+    flavor = species_flavor(pet.species)
+    if not pet.alive:
+        return "Um pet morto nao pode carregar cartas."
+    if pet.illness:
+        return f"{pet.name} esta doente demais para levar cartas agora."
+    if pet.is_sleeping:
+        return f"{pet.name} esta dormindo. Espere acordar antes de mandar uma carta."
+    if pet.energy < CARRY_MIN_ENERGY:
+        return flavor.carry_refuse.format(name=pet.name)
+    if pet.mood < CARRY_MIN_MOOD:
+        return flavor.carry_refuse.format(name=pet.name)
+    if pet.health < CARRY_MIN_HEALTH:
+        return flavor.carry_refuse.format(name=pet.name)
+    if pet.hygiene < CARRY_MIN_HYGIENE:
+        return f"{pet.name} precisa estar mais limpo e disposto antes de sair em entrega."
+    if pet.hunger > CARRY_MAX_HUNGER:
+        return f"{pet.name} esta com fome demais para levar carta agora."
+    return None
+
+
+def apply_carry_trip(pet: Pet, now: datetime) -> Pet:
+    flavor = species_flavor(pet.species)
+    return pet.evolve(
+        hunger=clamp(pet.hunger + CARRY_HUNGER_COST),
+        energy=clamp(pet.energy - CARRY_ENERGY_COST),
+        mood=clamp(pet.mood - CARRY_MOOD_COST),
+        hygiene=clamp(pet.hygiene - CARRY_HYGIENE_COST),
+        last_interaction_at=now,
+        last_update_at=now,
+        last_message=flavor.carry.format(name=pet.name),
+    )
 
 
 def _health_pressure(pet: Pet) -> Tuple[float, float]:

@@ -14,7 +14,7 @@ Uso:
   sudo ./scripts/flash.sh --all [--login-user USER]
 
 Opções:
-  --all                    instala dependências, gotchi nativo, config global e opcionalmente snippet
+  --all                    instala dependências, gotchi nativo, config global, spool de cartas e opcionalmente snippet
   --login-user USER        usuário alvo para ativar o snippet opcional de login
   -h, --help               mostra esta ajuda
 EOF

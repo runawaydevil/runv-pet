@@ -103,3 +103,5 @@ tmp/
 # --- Windows ---
 $RECYCLE.BIN/
 *.stackdump
+.gotchi-mail/
+
