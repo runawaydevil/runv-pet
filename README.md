@@ -4,6 +4,8 @@
 
 The default visual identity follows a terminal crow: watchful, a little mischievous, and witty enough to feel alive without being childish.
 
+![gotchi terminal UI](img/pet.jpeg)
+
 ## Installation
 
 Requires Python 3.9+.
